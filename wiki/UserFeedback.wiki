@@ -1,0 +1,7 @@
+#summary User Feedback page.
+
+= User Feedback =
+
+If you have anything to say about this project, feel free to comment on the bottom of this page.
+
+In case you have a problem, you can visit the [http://code.google.com/p/pidgin-knotifications/issues/list bugtracker page]. If there is no open bug for your problem, please create one, otherwise, you can comment on an existing bug, if you think there is something important to add.
