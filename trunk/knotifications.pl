@@ -20,15 +20,15 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.2",
-	summary => "Perl plugin that provides various notifications through KDialog.",
-	description => "Provides notifications through KDialog for the following events:\n" .
+	version => "0.3",
+	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
+	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
 				"- buddy signed on\n" .
 				"- buddy signed off\n" .
 				"\nThis program is offered under the terms of the GPL (version 2 or later). No warranty is provided for this program.",
 	author => "mrovi <mrovi\@interfete-web-club.com>",
-	url => "http://pidgin.im",
+	url => "http://code.google.com/p/pidgin-knotifications",
 	load => "plugin_load",
 	unload => "plugin_unload",
 	prefs_info => "prefs_info_handler"
@@ -40,19 +40,28 @@ sub plugin_init {
 
 sub plugin_load {
 	my $plugin = shift;
-	Purple::Debug::info("testplugin", "plugin_load() - Test Plugin Loaded.\n");
+	Purple::Debug::info("knotifications", "plugin_load() - Test Plugin Loaded.\n");
 
 	Purple::Prefs::add_none("/plugins/core/perl_knotifications");
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_msg_in_enable", 1);
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_chat_in_enable", 1);
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_chat_filter_my_nick", 1);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_signed_on_enable", 1);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_signed_off_enable", 1);
 	Purple::Prefs::add_int("/plugins/core/perl_knotifications/popup_duration", 5);
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/libnotify", 0);
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_icon", 1);
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_buddy_icon", 1);
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_protocol_icon", 1);
+	Purple::Prefs::add_string("/plugins/core/perl_knotifications/protocol_icons_path", "/usr/share/pixmaps/pidgin/protocols/48/");
 
 	$no_signed_on_popups = 0;
 	$no_signed_on_popups_timeout = 0;
 
 	Purple::Signal::connect(Purple::Conversations::get_handle(),
-		"receiving-im-msg", $plugin, \&receiving_im_msg_handler, 0);
+		"received-im-msg", $plugin, \&received_im_msg_handler, 0);
+	Purple::Signal::connect(Purple::Conversations::get_handle(),
+		"received-chat-msg", $plugin, \&received_chat_msg_handler, 0);
 	Purple::Signal::connect(Purple::BuddyList::get_handle(),
 		"buddy-signed-on", $plugin, \&buddy_signed_on_handler, 0);
 	Purple::Signal::connect(Purple::BuddyList::get_handle(),
@@ -66,7 +75,7 @@ sub plugin_load {
 
 sub plugin_unload {
 	my $plugin = shift;
-	Purple::Debug::info("testplugin", "plugin_unload() - Test Plugin Unloaded.\n");
+	Purple::Debug::info("knotifications", "plugin_unload() - Test Plugin Unloaded.\n");
 }
 
 sub prefs_info_handler {
@@ -74,6 +83,14 @@ sub prefs_info_handler {
 
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/popup_msg_in_enable", "Notification for received messages");
+	$frame->add($ppref);
+
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/popup_chat_in_enable", "Notification for received chat messages");
+	$frame->add($ppref);
+
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/popup_chat_filter_my_nick", "Show chat notifications only when someone mentions my nick");
 	$frame->add($ppref);
 
 	$ppref = Purple::PluginPref->new_with_name_and_label(
@@ -89,17 +106,127 @@ sub prefs_info_handler {
 	$ppref->set_bounds(1, 3600);
 	$frame->add($ppref);
 
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/show_icon", "Display icons");
+	$frame->add($ppref);
+
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/show_buddy_icon", "Display buddy icons if possible");
+	$frame->add($ppref);
+
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/show_protocol_icon", "Fallback to protocol icons");
+	$frame->add($ppref);
+
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/protocol_icons_path", "Path for protocol icons (must end with /)");
+	$frame->add($ppref);
+
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/libnotify", "Use libnotify (gnome style) instead of kdialog");
+	$frame->add($ppref);
+
 	return $frame;
 }
 
-sub receiving_im_msg_handler {
+sub show_popup {
+	my ($title, $text, $duration, $icon) = @_;
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify")) {
+		$duration = $duration * 1000;
+		if ($icon) {
+			system("notify-send -u low -t $duration -i $icon \"$title\" \"$text\" &");
+		} else {
+			system("notify-send -u low -t $duration \"$title\" \"$text\" &");
+		}
+	} else {
+		if ($icon) {
+			system("kdialog --nograb --title \"$title\" --icon $icon --passivepopup \"$text\" $duration &");
+		} else {
+			system("kdialog --nograb --title \"$title\" --passivepopup \"$text\" $duration &");
+		}
+	}
+}
+
+sub get_icon {
+	my ($buddy) = @_;
+
+	if (!Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_icon")) {
+		return null;
+	}
+
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_buddy_icon")) {
+		my $icon = $buddy->get_icon();
+		if ($icon) {
+			return $icon->get_full_path();
+		}
+	}
+
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_protocol_icon")) {
+		my $protocol = $buddy->get_account()->get_protocol_id();
+		Purple::Debug::misc("knotifications", "protocol id: $protocol\n");
+
+		my $protocol_icon = null;
+		if ($protocol eq 'prpl-aim') { $protocol_icon = 'aim.png'; }
+		if ($protocol eq 'prpl-bonjour') { $protocol_icon = 'bonjour.png'; }
+		if ($protocol eq 'prpl-gg') { $protocol_icon = 'gadu-gadu.png'; }
+		if ($protocol eq 'prpl-icq') { $protocol_icon = 'icq.png'; }
+		if ($protocol eq 'prpl-irc') { $protocol_icon = 'irc.png'; }
+		if ($protocol eq 'prpl-jabber') { $protocol_icon = 'jabber.png'; }
+		if ($protocol eq 'prpl-msn') { $protocol_icon = 'msn.png'; }
+		if ($protocol eq 'prpl-myspace') { $protocol_icon = 'myspace.png'; }
+		if ($protocol eq 'prpl-novell') { $protocol_icon = 'novell.png'; }
+		if ($protocol eq 'prpl-qq') { $protocol_icon = 'qq.png'; }
+		if ($protocol eq 'prpl-silc') { $protocol_icon = 'silc.png'; }
+		if ($protocol eq 'prpl-simple') { $protocol_icon = 'simple.png'; }
+		if ($protocol eq 'prpl-yahoo') { $protocol_icon = 'yahoo.png'; }
+		if ($protocol eq 'prpl-yahoojp') { $protocol_icon = 'yahoojp.png'; }
+		if ($protocol eq 'prpl-zephyr') { $protocol_icon = 'zephyr.png'; }
+
+		if ($protocol_icon) {
+			return Purple::Prefs::get_string("/plugins/core/perl_knotifications/protocol_icons_path") . $protocol_icon;
+		}
+	}
+
+	return "pidgin";
+}
+
+sub received_im_msg_handler {
 	my ($account, $sender, $message, $conv, $flags, $data) = @_;
 
 	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
+	my $buddy = Purple::BuddyList::Find::buddy($account, $sender);
+
+	Purple::Debug::misc("knotifications", "received_im_msg_handler(@_)\n");
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_msg_in_enable")) {
 		if (!$conv->has_focus()) {
-			system("kdialog --title \"Message received\" --passivepopup \"$sender: $message\" $duration");
+			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy));
+			#system("kdialog --nograb --title \"Message received\" --passivepopup \"$sender: $message\" $duration &");
+		}
+	}
+}
+
+sub received_chat_msg_handler {
+	my ($account, $sender, $message, $conv, $flags, $data) = @_;
+
+	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
+	my $buddy = Purple::BuddyList::Find::buddy($account, $sender);
+
+	Purple::Debug::misc("knotifications", "received_chat_msg_handler(@_)\n");
+
+	Purple::Debug::misc("knotifications", "your nick is " . $conv->get_chat_data->get_nick() . "\n");
+
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_in_enable")) {
+		if (!$conv->has_focus()) {
+			if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_filter_my_nick")) {
+				if (index($message, $conv->get_chat_data->get_nick()) >= 0) {
+					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy));
+					#system("kdialog --nograb --title \"Message received\" --passivepopup \"$sender: $message\" $duration &");
+				}
+			} else {
+				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy));
+				#system("kdialog --nograb --title \"Message received\" --passivepopup \"$sender: $message\" $duration &");
+			}
 		}
 	}
 }
@@ -113,12 +240,14 @@ sub buddy_signed_on_handler {
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_signed_on_enable") && $no_signed_on_popups == 0 && time() > $no_signed_on_popups_timeout) {
 		my $name = $buddy->get_name();
-		my $alias = $buddy->get_server_alias();
+		my $alias = $buddy->get_alias();
 
 		if ($name ne $alias) {
-			system("kdialog --title \"Buddy signed on\" --passivepopup \"$alias ($name)\" $duration");
+			show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy));
+			#system("kdialog --nograb --title \"Buddy signed on\" --passivepopup \"$alias ($name)\" $duration &");
 		} else {
-			system("kdialog --title \"Buddy signed on\" --passivepopup \"$name\" $duration");
+			show_popup("Buddy signed on", "$name", $duration, get_icon($buddy));
+			#system("kdialog --nograb --title \"Buddy signed on\" --passivepopup \"$name\" $duration &");
 		}
 	}
 }
@@ -130,11 +259,13 @@ sub buddy_signed_off_handler {
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_signed_off_enable")) {
 		my $name = $buddy->get_name();
-		my $alias = $buddy->get_server_alias();
+		my $alias = $buddy->get_alias();
 		if ($name ne $alias) {
-			system("kdialog --title \"Buddy signed off\" --passivepopup \"$alias ($name)\" $duration");
+			show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy));
+			#system("kdialog --nograb --title \"Buddy signed off\" --passivepopup \"$alias ($name)\" $duration &");
 		} else {
-			system("kdialog --title \"Buddy signed off\" --passivepopup \"$name\" $duration");
+			show_popup("Buddy signed off", "$name", $duration, get_icon($buddy));
+			#system("kdialog --nograb --title \"Buddy signed off\" --passivepopup \"$name\" $duration &");
 		}
 	}
 }
