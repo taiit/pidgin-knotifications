@@ -20,7 +20,7 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3",
+	version => "0.3.1",
 	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -148,21 +148,30 @@ sub show_popup {
 }
 
 sub get_icon {
-	my ($buddy) = @_;
+	my ($buddy, $account) = @_;
 
 	if (!Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_icon")) {
 		return null;
 	}
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_buddy_icon")) {
-		my $icon = $buddy->get_icon();
-		if ($icon) {
-			return $icon->get_full_path();
+		if ($buddy) {
+			my $icon = $buddy->get_icon();
+			if ($icon) {
+				return $icon->get_full_path();
+			}
 		}
 	}
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_protocol_icon")) {
-		my $protocol = $buddy->get_account()->get_protocol_id();
+		my $protocol = "";
+		if ($buddy) {
+			$protocol = $buddy->get_account()->get_protocol_id();
+		} else {
+			if ($account) {
+				$protocol = $account->get_protocol_id();
+			}
+		}
 		Purple::Debug::misc("knotifications", "protocol id: $protocol\n");
 
 		my $protocol_icon = null;
@@ -193,14 +202,23 @@ sub get_icon {
 sub received_im_msg_handler {
 	my ($account, $sender, $message, $conv, $flags, $data) = @_;
 
-	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
-	my $buddy = Purple::BuddyList::Find::buddy($account, $sender);
-
 	Purple::Debug::misc("knotifications", "received_im_msg_handler(@_)\n");
+
+	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
+	my $buddy = Purple::Find::buddy($account, $sender);
+	if ($buddy) {
+		my $name = $buddy->get_name();
+		my $alias = $buddy->get_alias();
+		if ($name ne $alias) {
+			$sender = "$alias ($name)";
+		} else {
+			$sender = "$name";
+		}
+	}
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_msg_in_enable")) {
 		if (!$conv->has_focus()) {
-			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy));
+			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
 			#system("kdialog --nograb --title \"Message received\" --passivepopup \"$sender: $message\" $duration &");
 		}
 	}
@@ -209,22 +227,29 @@ sub received_im_msg_handler {
 sub received_chat_msg_handler {
 	my ($account, $sender, $message, $conv, $flags, $data) = @_;
 
-	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
-	my $buddy = Purple::BuddyList::Find::buddy($account, $sender);
-
 	Purple::Debug::misc("knotifications", "received_chat_msg_handler(@_)\n");
 
-	Purple::Debug::misc("knotifications", "your nick is " . $conv->get_chat_data->get_nick() . "\n");
+	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
+	my $buddy = Purple::Find::buddy($account, $sender);
+	if ($buddy) {
+		my $name = $buddy->get_name();
+		my $alias = $buddy->get_alias();
+		if ($name ne $alias) {
+			$sender = "$alias ($name)";
+		} else {
+			$sender = "$name";
+		}
+	}
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_in_enable")) {
 		if (!$conv->has_focus()) {
 			if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_filter_my_nick")) {
 				if (index($message, $conv->get_chat_data->get_nick()) >= 0) {
-					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy));
+					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
 					#system("kdialog --nograb --title \"Message received\" --passivepopup \"$sender: $message\" $duration &");
 				}
 			} else {
-				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy));
+				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
 				#system("kdialog --nograb --title \"Message received\" --passivepopup \"$sender: $message\" $duration &");
 			}
 		}
