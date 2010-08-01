@@ -20,7 +20,7 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3.1",
+	version => "0.3.2",
 	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -204,6 +204,8 @@ sub received_im_msg_handler {
 
 	Purple::Debug::misc("knotifications", "received_im_msg_handler(@_)\n");
 
+	$message =~ s/<[^>]+>//g;
+
 	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
 	my $buddy = Purple::Find::buddy($account, $sender);
 	if ($buddy) {
@@ -228,6 +230,8 @@ sub received_chat_msg_handler {
 	my ($account, $sender, $message, $conv, $flags, $data) = @_;
 
 	Purple::Debug::misc("knotifications", "received_chat_msg_handler(@_)\n");
+
+	$message =~ s/<[^>]+>//g;
 
 	my $duration = Purple::Prefs::get_int("/plugins/core/perl_knotifications/popup_duration");
 	my $buddy = Purple::Find::buddy($account, $sender);
