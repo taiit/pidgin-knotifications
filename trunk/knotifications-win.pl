@@ -20,8 +20,8 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3.3",
-	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
+	version => "0.3.3.win",
+	summary => "Perl plugin that provides various notifications through Growl for Windows.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
 				"- buddy signed on\n" .
@@ -49,11 +49,11 @@ sub plugin_load {
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_signed_on_enable", 1);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/popup_signed_off_enable", 1);
 	Purple::Prefs::add_int("/plugins/core/perl_knotifications/popup_duration", 5);
-	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/libnotify", 0);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_icon", 1);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_buddy_icon", 1);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_protocol_icon", 1);
-	Purple::Prefs::add_string("/plugins/core/perl_knotifications/protocol_icons_path", "/usr/share/pixmaps/pidgin/protocols/48/");
+	Purple::Prefs::add_string("/plugins/core/perl_knotifications/protocol_icons_path", "C:\\Program Files (x86)\\Pidgin\\pixmaps\\pidgin\\protocols\\48\\");
+	Purple::Prefs::add_string("/plugins/core/perl_knotifications/growl_command", "C:\\Program Files (x86)\\Growl for Windows\\growlnotify.exe");
 
 	$no_signed_on_popups = 0;
 	$no_signed_on_popups_timeout = 0;
@@ -119,32 +119,24 @@ sub prefs_info_handler {
 	$frame->add($ppref);
 
 	$ppref = Purple::PluginPref->new_with_name_and_label(
-		"/plugins/core/perl_knotifications/protocol_icons_path", "Path for protocol icons (must end with /)");
+		"/plugins/core/perl_knotifications/protocol_icons_path", "Path for protocol icons (must end with \\)");
 	$frame->add($ppref);
-
+	
 	$ppref = Purple::PluginPref->new_with_name_and_label(
-		"/plugins/core/perl_knotifications/libnotify", "Use libnotify (gnome style) instead of kdialog");
+		"/plugins/core/perl_knotifications/growl_command", "Command to run growlnotify.exe");
 	$frame->add($ppref);
 
 	return $frame;
 }
 
 sub show_popup {
-	my ($title, $text, $duration, $icon) = @_;
-	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify")) {
-		$duration = $duration * 1000;
-		if ($icon) {
-			system("notify-send -u low -t $duration -i $icon \"$title\" \"$text\" &");
-		} else {
-			system("notify-send -u low -t $duration \"$title\" \"$text\" &");
-		}
-	} else {
-		if ($icon) {
-			system("kdialog --nograb --title \"$title\" --icon $icon --passivepopup \"$text\" $duration &");
-		} else {
-			system("kdialog --nograb --title \"$title\" --passivepopup \"$text\" $duration &");
-		}
-	}
+	my ($title, $text, $duration, $icon) = @_;	
+  
+  if ($icon) {
+    system("\"" . Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command") . "\" /i:\"$icon\" /t:\"$title\" \"$text\" ");
+  } else {
+    system(Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command") . "\" /t:\"$title\" \"$text\" ");
+  }
 }
 
 sub get_icon {
