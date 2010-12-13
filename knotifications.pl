@@ -20,7 +20,7 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3.3",
+	version => "0.3.4",
 	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -131,6 +131,8 @@ sub prefs_info_handler {
 
 sub show_popup {
 	my ($title, $text, $duration, $icon) = @_;
+	# replace non-(alphanumeric _ & # ;) with the corresponding HTML escape code
+	$text =~ s/([^\w&#;])/'&#'.ord($1).';'/ge;
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify")) {
 		$duration = $duration * 1000;
 		if ($icon) {
@@ -145,6 +147,7 @@ sub show_popup {
 			system("kdialog --nograb --title \"$title\" --passivepopup \"$text\" $duration &");
 		}
 	}
+	#Purple::Debug::misc("knotifications", "kdialog --nograb --title \"$title\" --passivepopup \"$text\" $duration & \n");
 }
 
 sub get_icon {
