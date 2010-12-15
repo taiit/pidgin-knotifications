@@ -19,7 +19,7 @@ use Purple;
 
 %PLUGIN_INFO = (
 	perl_api_version => 2,
-	name => "KDE Notifications",
+	name => "Growl notifications",
 	version => "0.3.4.win",
 	summary => "Perl plugin that provides various notifications through Growl for Windows.",
 	description => "Provides notifications for the following events:\n" .
