@@ -20,7 +20,7 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3.3.win",
+	version => "0.3.4.win",
 	summary => "Perl plugin that provides various notifications through Growl for Windows.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -131,12 +131,23 @@ sub prefs_info_handler {
 
 sub show_popup {
 	my ($title, $text, $duration, $icon) = @_;	
-  
+  # unescape HTML
+  $text =~ s/&#(\d+);/pack("c",$1)/ge;
+  $text =~ s/&lt;/</g;
+  $text =~ s/&gt;/>/g;
+  $text =~ s/&quot;/"/g;
+  $text =~ s/&apos;/'/g;
+  $text =~ s/&amp;/&/g;
+  # windows cmd and growlnotify stuff
+  $text =~ s/"/''/g;
+  $text =~ s/\\n/\\\\n/g;
+  $text =~ s/(\\+)$/$1$1/g;
   if ($icon) {
-    system("\"" . Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command") . "\" /i:\"$icon\" /t:\"$title\" \"$text\" ");
+    system((Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"), "/i:$icon", "/t:$title", $text));
   } else {
-    system(Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command") . "\" /t:\"$title\" \"$text\" ");
+  system((Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"), "/t:$title", $text));
   }
+  Purple::Debug::misc("knotifications", "$text\n");
 }
 
 sub get_icon {
