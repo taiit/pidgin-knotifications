@@ -20,7 +20,7 @@ use Purple;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3.4",
+	version => "0.3.5",
 	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -131,9 +131,9 @@ sub prefs_info_handler {
 
 sub show_popup {
 	my ($title, $text, $duration, $icon) = @_;
-	# replace non-(alphanumeric _ & # ;) with the corresponding HTML escape code
-	$text =~ s/([^\w&#;])/'&#'.ord($1).';'/ge;
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify")) {
+        # replace non-(alphanumeric _ & # ;) with the corresponding HTML escape code
+        $text =~ s/([^\w&#;])/'&#'.ord($1).';'/ge;
 		$duration = $duration * 1000;
 		if ($icon) {
 			system("notify-send -u low -t $duration -i $icon \"$title\" \"$text\" &");
@@ -141,10 +141,19 @@ sub show_popup {
 			system("notify-send -u low -t $duration \"$title\" \"$text\" &");
 		}
 	} else {
+        # single quotes disable recognition of all bash special characters
+        # so we don't want to have any in the string
+        $text =~ s/(['])/'"'/ge;
+        $text =~ s/&quot;/'"'/ge;
+        $text =~ s/&apos;/'"'/ge;
+        $text =~ s/&amp;/'&'/ge;
+        $text =~ s/&lt;/'<'/ge;
+        $text =~ s/&gt;/'>'/ge;
+        $text =~ s/&nbsp;/' '/ge;
 		if ($icon) {
-			system("kdialog --nograb --title \"$title\" --icon $icon --passivepopup \"$text\" $duration &");
+			system("kdialog --nograb --title \"$title\" --icon $icon --passivepopup \'$text\' $duration &");
 		} else {
-			system("kdialog --nograb --title \"$title\" --passivepopup \"$text\" $duration &");
+			system("kdialog --nograb --title \"$title\" --passivepopup \'$text\' $duration &");
 		}
 	}
 	#Purple::Debug::misc("knotifications", "kdialog --nograb --title \"$title\" --passivepopup \"$text\" $duration & \n");
