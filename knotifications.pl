@@ -161,7 +161,7 @@ sub check_for_updates {
 		use LWP::UserAgent;
 		use HTTP::Request;
 
-		$request = HTTP::Request->new(GET => 'http://pidgin-knotifications.googlecode.com/files/latest-linux-version.txt');
+		$request = HTTP::Request->new(GET => 'http://pidgin-knotifications.googlecode.com/svn/trunk/latest-linux-version.txt');
 
 		$ua = LWP::UserAgent->new();
 		$response = $ua->request($request);
