@@ -15,13 +15,20 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02111-1301, USA.
 
+############
+# Changelog
+# * Added support for masking sign on/off events for certain buddies
+# * Added update checking at startup
+#
+############
+
 use Purple;
 use HTML::Entities;
 
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "KDE Notifications",
-	version => "0.3.5",
+	version => "0.3.6",
 	summary => "Perl plugin that provides various notifications through KDialog or libnotify.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -55,6 +62,8 @@ sub plugin_load {
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_buddy_icon", 1);
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_protocol_icon", 1);
 	Purple::Prefs::add_string("/plugins/core/perl_knotifications/protocol_icons_path", "/usr/share/pixmaps/pidgin/protocols/48/");
+	Purple::Prefs::add_string("/plugins/core/perl_knotifications/signon_regex", '^(example_buddy_id_1|example_buddy_id_2|Example Buddy Name)$');
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/check_for_updates", 1);
 
 	$no_signed_on_popups = 0;
 	$no_signed_on_popups_timeout = 0;
@@ -72,6 +81,10 @@ sub plugin_load {
 		"signing-on", $plugin, \&signing_on_handler, 0);
 	Purple::Signal::connect(Purple::Connections::get_handle(),
 		"signed-on", $plugin, \&signed_on_handler, 0);
+	
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/check_for_updates")) {
+		check_for_updates();
+	}
 }
 
 sub plugin_unload {
@@ -101,6 +114,10 @@ sub prefs_info_handler {
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/popup_signed_off_enable", "Notification for buddy sign off events");
 	$frame->add($ppref);
+	
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/signon_regex", "Disable sign on/off notifications for these buddies (regex)");
+	$frame->add($ppref);
 
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/popup_duration", "Popup duration (seconds)");
@@ -126,20 +143,56 @@ sub prefs_info_handler {
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/libnotify", "Use libnotify (gnome style) instead of kdialog");
 	$frame->add($ppref);
+	
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/check_for_updates", "Check for updates on startup");
+	$frame->add($ppref);
 
 	return $frame;
 }
 
+sub check_for_updates {
+	my $libnotify = Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify");
+	my $duration = 30;
+	my $icon = "pidgin";
+	my $version = $PLUGIN_INFO{ 'version' };
+	
+	if (fork() == 0) {
+		use LWP::UserAgent;
+		use HTTP::Request;
+
+		$request = HTTP::Request->new(GET => 'http://pidgin-knotifications.googlecode.com/files/latest-linux-version.txt');
+
+		$ua = LWP::UserAgent->new();
+		$response = $ua->request($request);
+		$latest = $response->decoded_content();
+		
+		if ($latest =~ '^\d\.\d\.\d$' && $latest ne $version) {
+			show_popup('Pidgin KDE Notifications: update available (' . $latest . ')',
+					'<a href="http://code.google.com/p/pidgin-knotifications/downloads/detail?name=knotifications-' . $latest . '.pl">Open download page</a>',
+						$duration, $icon, $libnotify, 1);
+		}
+		exit(0);
+	}
+}
+
 sub show_popup {
-	my ($title, $text, $duration, $icon) = @_;
+	my ($title, $text, $duration, $icon, $libnotify, $raw_html) = @_;
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify")) {
-        # replace non-(alphanumeric _ & # ;) with the corresponding HTML escape code
-        $text =~ s/([^\w&#;])/'&#'.ord($1).';'/ge;
+		if (!$raw_html) {
+			# replace non-(alphanumeric _ & # ;) with the corresponding HTML escape code
+			$text =~ s/([^\w&#;])/'&#'.ord($1).';'/ge;
+		}
+		# single quotes disable recognition of all bash special characters
+        # so we don't want to have any in the string
+        $title =~ s/(['])/'"'/ge;
+        $text =~ s/(['])/'"'/ge;
+		
 		$duration = $duration * 1000;
 		if ($icon) {
-			system("notify-send -u low -t $duration -i $icon \"$title\" \"$text\" &");
+			system("notify-send -u low -t $duration -i $icon \'$title\' \'$text\' &");
 		} else {
-			system("notify-send -u low -t $duration \"$title\" \"$text\" &");
+			system("notify-send -u low -t $duration \'$title\' \'$text\' &");
 		}
 	} else {
         decode_entities($title);
@@ -230,7 +283,8 @@ sub received_im_msg_handler {
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_msg_in_enable")) {
 		if (!defined $conv || !$conv->has_focus()) {
-			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
+			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account),
+					   Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
 		}
 	}
 }
@@ -258,10 +312,12 @@ sub received_chat_msg_handler {
 		if (!defined $conv || !$conv->has_focus()) {
 			if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_filter_my_nick")) {
 				if (index($message, $conv->get_chat_data->get_nick()) >= 0) {
-					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
+					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account),
+						Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
 				}
 			} else {
-				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
+				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account),
+					Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
 			}
 		}
 	}
@@ -277,13 +333,18 @@ sub buddy_signed_on_handler {
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_signed_on_enable") && $no_signed_on_popups == 0 && time() > $no_signed_on_popups_timeout) {
 		my $name = $buddy->get_name();
 		my $alias = $buddy->get_alias();
-
-		if ($name ne $alias) {
-			show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed on\" --passivepopup \"$alias ($name)\" $duration &");
+		
+		my $regex_ignore = Purple::Prefs::get_string("/plugins/core/perl_knotifications/signon_regex");
+		if ($name =~ m/$regex_ignore/ || $alias =~ m/$regex_ignore/) {
+			Purple::Debug::misc("knotifications", "Ignored (regex) sign on event for $alias ($name)\n");
 		} else {
-			show_popup("Buddy signed on", "$name", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed on\" --passivepopup \"$name\" $duration &");
+			if ($name ne $alias) {
+				show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy),
+					Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
+			} else {
+				show_popup("Buddy signed on", "$name", $duration, get_icon($buddy),
+					Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
+			}
 		}
 	}
 }
@@ -296,12 +357,18 @@ sub buddy_signed_off_handler {
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_signed_off_enable")) {
 		my $name = $buddy->get_name();
 		my $alias = $buddy->get_alias();
-		if ($name ne $alias) {
-			show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed off\" --passivepopup \"$alias ($name)\" $duration &");
+		
+		my $regex_ignore = Purple::Prefs::get_string("/plugins/core/perl_knotifications/signon_regex");
+		if ($name =~ m/$regex_ignore/ || $alias =~ m/$regex_ignore/) {
+			Purple::Debug::misc("knotifications", "Ignored (regex) sign off event for $alias ($name)\n");
 		} else {
-			show_popup("Buddy signed off", "$name", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed off\" --passivepopup \"$name\" $duration &");
+			if ($name ne $alias) {
+				show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy),
+					Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
+			} else {
+				show_popup("Buddy signed off", "$name", $duration, get_icon($buddy),
+					Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
+			}
 		}
 	}
 }
