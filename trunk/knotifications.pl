@@ -184,9 +184,9 @@ sub show_popup {
 			$text =~ s/([^\w&#;])/'&#'.ord($1).';'/ge;
 		}
 		# single quotes disable recognition of all bash special characters
-        # so we don't want to have any in the string
-        $title =~ s/(['])/'"'/ge;
-        $text =~ s/(['])/'"'/ge;
+		# so we don't want to have any in the string
+		$title =~ s/(['])/'"'/ge;
+		$text =~ s/(['])/'"'/ge;
 		
 		$duration = $duration * 1000;
 		if ($icon) {
@@ -195,13 +195,13 @@ sub show_popup {
 			system("notify-send -u low -t $duration \'$title\' \'$text\' &");
 		}
 	} else {
-        decode_entities($title);
-        decode_entities($text);
-        # single quotes disable recognition of all bash special characters
-        # so we don't want to have any in the string
-        $title =~ s/(['])/'"'/ge;
-        $text =~ s/(['])/'"'/ge;
-        if ($icon) {
+		decode_entities($title);
+		decode_entities($text);
+		# single quotes disable recognition of all bash special characters
+		# so we don't want to have any in the string
+		$title =~ s/(['])/'"'/ge;
+		$text =~ s/(['])/'"'/ge;
+		if ($icon) {
 			system("kdialog --nograb --title \'$title\' --icon $icon --passivepopup \'$text\' $duration &");
 		} else {
 			system("kdialog --nograb --title \'$title\' --passivepopup \'$text\' $duration &");
@@ -284,7 +284,7 @@ sub received_im_msg_handler {
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_msg_in_enable")) {
 		if (!defined $conv || !$conv->has_focus()) {
 			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account),
-					   Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
+					Purple::Prefs::get_bool("/plugins/core/perl_knotifications/libnotify"), 0);
 		}
 	}
 }
