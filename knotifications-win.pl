@@ -7,7 +7,7 @@
 #
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the GNU
 # General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
@@ -15,12 +15,20 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02111-1301, USA.
 
+############
+# Changelog
+# * Added support for masking sign on/off events for certain buddies
+# * Added update checking at startup
+#
+############
+
 use Purple;
+use HTML::Entities;
 
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "Growl notifications",
-	version => "0.3.4.win",
+	version => "0.3.5",
 	summary => "Perl plugin that provides various notifications through Growl for Windows.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -54,6 +62,8 @@ sub plugin_load {
 	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/show_protocol_icon", 1);
 	Purple::Prefs::add_string("/plugins/core/perl_knotifications/protocol_icons_path", "C:\\Program Files (x86)\\Pidgin\\pixmaps\\pidgin\\protocols\\48\\");
 	Purple::Prefs::add_string("/plugins/core/perl_knotifications/growl_command", "C:\\Program Files (x86)\\Growl for Windows\\growlnotify.exe");
+	Purple::Prefs::add_string("/plugins/core/perl_knotifications/signon_regex", '^(example_buddy_id_1|example_buddy_id_2|Example Buddy Name)$');
+	Purple::Prefs::add_bool("/plugins/core/perl_knotifications/check_for_updates", 1);
 
 	$no_signed_on_popups = 0;
 	$no_signed_on_popups_timeout = 0;
@@ -71,6 +81,10 @@ sub plugin_load {
 		"signing-on", $plugin, \&signing_on_handler, 0);
 	Purple::Signal::connect(Purple::Connections::get_handle(),
 		"signed-on", $plugin, \&signed_on_handler, 0);
+	
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/check_for_updates")) {
+		check_for_updates();
+	}
 }
 
 sub plugin_unload {
@@ -100,6 +114,10 @@ sub prefs_info_handler {
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/popup_signed_off_enable", "Notification for buddy sign off events");
 	$frame->add($ppref);
+	
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/signon_regex", "Disable sign on/off notifications for these buddies (regex)");
+	$frame->add($ppref);
 
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/popup_duration", "Popup duration (seconds)");
@@ -125,29 +143,77 @@ sub prefs_info_handler {
 	$ppref = Purple::PluginPref->new_with_name_and_label(
 		"/plugins/core/perl_knotifications/growl_command", "Command to run growlnotify.exe");
 	$frame->add($ppref);
+	
+	$ppref = Purple::PluginPref->new_with_name_and_label(
+		"/plugins/core/perl_knotifications/check_for_updates", "Check for updates on startup");
+	$frame->add($ppref);
 
 	return $frame;
 }
 
+sub check_for_updates {
+	my $growl = Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command");
+	my $duration = 30;
+	my $icon = null;
+	my $version = $PLUGIN_INFO{ 'version' };
+	
+	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_protocol_icon")) {
+		$icon = Purple::Prefs::get_string("/plugins/core/perl_knotifications/protocol_icons_path") . '../../buttons/info.png';
+	}
+	
+	if (fork() == 0) {
+		use LWP::UserAgent;
+		use HTTP::Request;
+
+		$request = HTTP::Request->new(GET => 'http://pidgin-knotifications.googlecode.com/svn/trunk/latest-linux-version.txt');
+
+		$ua = LWP::UserAgent->new();
+		$response = $ua->request($request);
+		$latest = $response->decoded_content();
+		
+		if ($latest =~ '^\d\.\d\.\d$' && $latest ne $version) {
+			show_popup('Pidgin Growl Notifications: update available (' . $latest . ')',
+				'Click to open download page',
+				$duration,
+				$icon,
+				'http://code.google.com/p/pidgin-knotifications/downloads/detail?name=knotifications-' . $latest . '-win.pl',
+				$growl);
+		}
+		exit(0);
+	}
+}
+
+sub forkexec {
+	my ($cmd, @args) = @_;
+	# Purple::Debug::misc("knotifications", "running: $cmd @args\n");
+	if (fork() == 0) {
+		exec($cmd, @args);
+	}
+}
+
 sub show_popup {
-	my ($title, $text, $duration, $icon) = @_;	
-  # unescape HTML
-  $text =~ s/&#(\d+);/pack("c",$1)/ge;
-  $text =~ s/&lt;/</g;
-  $text =~ s/&gt;/>/g;
-  $text =~ s/&quot;/"/g;
-  $text =~ s/&apos;/'/g;
-  $text =~ s/&amp;/&/g;
-  # windows cmd and growlnotify stuff
-  $text =~ s/"/''/g;
-  $text =~ s/\\n/\\\\n/g;
-  $text =~ s/(\\+)$/$1$1/g;
-  if ($icon) {
-    system((Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"), "/i:$icon", "/t:$title", $text));
-  } else {
-  system((Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"), "/t:$title", $text));
-  }
-  Purple::Debug::misc("knotifications", "$text\n");
+	my ($title, $text, $duration, $icon, $url, $growl) = @_;
+	
+	decode_entities($title);
+	decode_entities($text);
+		
+	# windows cmd and growlnotify stuff
+	$text =~ s/"/''/g;
+	$text =~ s/\\n/\\\\n/g;
+	$text =~ s/(\\+)$/$1$1/g;
+	if ($icon) {
+		if ($url) {
+			forkexec($growl, "/i:$icon", "/t:$title", "/cu:$url", $text);
+		} else {
+			forkexec($growl, "/i:$icon", "/t:$title", $text);
+		}
+	} else {
+		if ($url) {
+			forkexec($growl, "/t:$title", "/cu:$url", $text);
+		} else {
+			forkexec($growl, "/t:$title", $text);
+		}
+	}
 }
 
 sub get_icon {
@@ -160,7 +226,7 @@ sub get_icon {
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_buddy_icon")) {
 		if ($buddy) {
 			my $icon = $buddy->get_icon();
-			if ($icon) {
+			if ($icon && !($icon =~ m/\.icon$/)) {
 				return $icon->get_full_path();
 			}
 		}
@@ -196,10 +262,17 @@ sub get_icon {
 
 		if ($protocol_icon) {
 			return Purple::Prefs::get_string("/plugins/core/perl_knotifications/protocol_icons_path") . $protocol_icon;
+		} else {
+			return Purple::Prefs::get_string("/plugins/core/perl_knotifications/protocol_icons_path") . '../../tray/hicolor/48x48/status/pidgin-tray-pending.png';
 		}
 	}
+	
+	my $generic = Purple::Prefs::get_string("/plugins/core/perl_knotifications/protocol_icons_path") . '../../tray/hicolor/48x48/status/pidgin-tray-pending.png';
+	if (-e $generic) {
+		return $generic;
+	}
 
-	return "pidgin";
+	return null;
 }
 
 sub received_im_msg_handler {
@@ -223,7 +296,8 @@ sub received_im_msg_handler {
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_msg_in_enable")) {
 		if (!defined $conv || !$conv->has_focus()) {
-			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
+			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), null,
+				Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 		}
 	}
 }
@@ -251,10 +325,12 @@ sub received_chat_msg_handler {
 		if (!defined $conv || !$conv->has_focus()) {
 			if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_filter_my_nick")) {
 				if (index($message, $conv->get_chat_data->get_nick()) >= 0) {
-					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
+					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), null,
+						Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 				}
 			} else {
-				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account));
+				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), null,
+					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 			}
 		}
 	}
@@ -271,12 +347,17 @@ sub buddy_signed_on_handler {
 		my $name = $buddy->get_name();
 		my $alias = $buddy->get_alias();
 
-		if ($name ne $alias) {
-			show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed on\" --passivepopup \"$alias ($name)\" $duration &");
+		my $regex_ignore = Purple::Prefs::get_string("/plugins/core/perl_knotifications/signon_regex");
+		if ($name =~ m/$regex_ignore/ || $alias =~ m/$regex_ignore/) {
+			Purple::Debug::misc("knotifications", "Ignored (regex) sign on event for $alias ($name)\n");
 		} else {
-			show_popup("Buddy signed on", "$name", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed on\" --passivepopup \"$name\" $duration &");
+			if ($name ne $alias) {
+				show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy), null,
+					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
+			} else {
+				show_popup("Buddy signed on", "$name", $duration, get_icon($buddy), null,
+					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
+			}
 		}
 	}
 }
@@ -289,12 +370,18 @@ sub buddy_signed_off_handler {
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_signed_off_enable")) {
 		my $name = $buddy->get_name();
 		my $alias = $buddy->get_alias();
-		if ($name ne $alias) {
-			show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed off\" --passivepopup \"$alias ($name)\" $duration &");
+		
+		my $regex_ignore = Purple::Prefs::get_string("/plugins/core/perl_knotifications/signon_regex");
+		if ($name =~ m/$regex_ignore/ || $alias =~ m/$regex_ignore/) {
+			Purple::Debug::misc("knotifications", "Ignored (regex) sign on event for $alias ($name)\n");
 		} else {
-			show_popup("Buddy signed off", "$name", $duration, get_icon($buddy));
-			#system("kdialog --nograb --title \"Buddy signed off\" --passivepopup \"$name\" $duration &");
+			if ($name ne $alias) {
+				show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy), null,
+					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
+			} else {
+				show_popup("Buddy signed off", "$name", $duration, get_icon($buddy), null,
+					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
+			}
 		}
 	}
 }
