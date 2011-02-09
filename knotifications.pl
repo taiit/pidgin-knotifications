@@ -214,7 +214,7 @@ sub get_icon {
 	my ($buddy, $account) = @_;
 
 	if (!Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_icon")) {
-		return null;
+		return 0;
 	}
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/show_buddy_icon")) {
@@ -237,7 +237,7 @@ sub get_icon {
 		}
 		Purple::Debug::misc("knotifications", "protocol id: $protocol\n");
 
-		my $protocol_icon = null;
+		my $protocol_icon = 0;
 		if ($protocol eq 'prpl-aim') { $protocol_icon = 'aim.png'; }
 		if ($protocol eq 'prpl-bonjour') { $protocol_icon = 'bonjour.png'; }
 		if ($protocol eq 'prpl-gg') { $protocol_icon = 'gadu-gadu.png'; }

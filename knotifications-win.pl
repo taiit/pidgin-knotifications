@@ -296,7 +296,7 @@ sub received_im_msg_handler {
 
 	if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_msg_in_enable")) {
 		if (!defined $conv || !$conv->has_focus()) {
-			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), null,
+			show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), 0,
 				Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 		}
 	}
@@ -325,11 +325,11 @@ sub received_chat_msg_handler {
 		if (!defined $conv || !$conv->has_focus()) {
 			if (Purple::Prefs::get_bool("/plugins/core/perl_knotifications/popup_chat_filter_my_nick")) {
 				if (index($message, $conv->get_chat_data->get_nick()) >= 0) {
-					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), null,
+					show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), 0,
 						Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 				}
 			} else {
-				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), null,
+				show_popup("Message received", "$sender: $message", $duration, get_icon($buddy, $account), 0,
 					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 			}
 		}
@@ -352,10 +352,10 @@ sub buddy_signed_on_handler {
 			Purple::Debug::misc("knotifications", "Ignored (regex) sign on event for $alias ($name)\n");
 		} else {
 			if ($name ne $alias) {
-				show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy), null,
+				show_popup("Buddy signed on", "$alias ($name)", $duration, get_icon($buddy), 0,
 					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 			} else {
-				show_popup("Buddy signed on", "$name", $duration, get_icon($buddy), null,
+				show_popup("Buddy signed on", "$name", $duration, get_icon($buddy), 0,
 					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 			}
 		}
@@ -376,10 +376,10 @@ sub buddy_signed_off_handler {
 			Purple::Debug::misc("knotifications", "Ignored (regex) sign on event for $alias ($name)\n");
 		} else {
 			if ($name ne $alias) {
-				show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy), null,
+				show_popup("Buddy signed off", "$alias ($name)", $duration, get_icon($buddy), 0,
 					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 			} else {
-				show_popup("Buddy signed off", "$name", $duration, get_icon($buddy), null,
+				show_popup("Buddy signed off", "$name", $duration, get_icon($buddy), 0,
 					Purple::Prefs::get_string("/plugins/core/perl_knotifications/growl_command"));
 			}
 		}
