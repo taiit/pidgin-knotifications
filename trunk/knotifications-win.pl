@@ -28,7 +28,7 @@ use HTML::Entities;
 %PLUGIN_INFO = (
 	perl_api_version => 2,
 	name => "Growl notifications",
-	version => "0.3.5",
+	version => "0.3.6",
 	summary => "Perl plugin that provides various notifications through Growl for Windows.",
 	description => "Provides notifications for the following events:\n" .
 				"- message received\n" .
@@ -165,7 +165,7 @@ sub check_for_updates {
 		use LWP::UserAgent;
 		use HTTP::Request;
 
-		$request = HTTP::Request->new(GET => 'http://pidgin-knotifications.googlecode.com/svn/trunk/latest-linux-version.txt');
+		$request = HTTP::Request->new(GET => 'http://pidgin-knotifications.googlecode.com/svn/trunk/latest-win-version.txt');
 
 		$ua = LWP::UserAgent->new();
 		$response = $ua->request($request);
